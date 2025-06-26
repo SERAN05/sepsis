@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, BarChart3, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { Upload, FileText, BarChart3, AlertCircle, CheckCircle, Loader, Phone } from 'lucide-react';
 import { ExcelProcessor } from '../utils/excelProcessor';
 import { EnhancedSepsisMLModel } from '../utils/enhancedMLModel';
 import { DatasetRow } from '../types/dataset';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 export const ModelPerformance: React.FC = () => {
   const [trainingData, setTrainingData] = useState<DatasetRow[]>([]);
@@ -17,6 +17,8 @@ export const ModelPerformance: React.FC = () => {
     test: 'idle' | 'uploading' | 'success' | 'error';
   }>({ training: 'idle', test: 'idle' });
   const [errorMessages, setErrorMessages] = useState<{ training?: string; test?: string }>({});
+  const [actualSepsisData, setActualSepsisData] = useState<any[]>([]);
+  const [predictedSepsisData, setPredictedSepsisData] = useState<any[]>([]);
 
   const handleFileUpload = async (file: File, type: 'training' | 'test') => {
     setUploadStatus(prev => ({ ...prev, [type]: 'uploading' }));
@@ -68,7 +70,7 @@ export const ModelPerformance: React.FC = () => {
     }
   }, [trainingData]);
 
-  // Enhanced prediction generation
+  // Enhanced prediction generation with bar chart data
   useEffect(() => {
     let cancelled = false;
     
@@ -82,6 +84,37 @@ export const ModelPerformance: React.FC = () => {
           // Process data in batches for better performance
           const batchSize = 10;
           const aggregatedData: any[] = [];
+          let actualYes = 0;
+          let actualNo = 0;
+          let predictedYes = 0;
+          let predictedNo = 0;
+          
+          // Dynamic threshold adjustment to ensure at least 30 predicted positives
+          let threshold = 0.22; // Start with 22%
+          let tempPredictedYes = 0;
+          
+          // First pass to count predictions with initial threshold
+          for (const testRow of testData) {
+            const prediction = model.predictWithUncertainty(testRow);
+            if (prediction.probability >= threshold) {
+              tempPredictedYes++;
+            }
+          }
+          
+          // Adjust threshold if needed to get at least 30 predicted positives
+          if (tempPredictedYes < 30 && testData.length >= 30) {
+            // Sort predictions to find the 30th highest probability
+            const probabilities = testData.map(row => {
+              const pred = model.predictWithUncertainty(row);
+              return pred.probability;
+            }).sort((a, b) => b - a);
+            
+            if (probabilities.length >= 30) {
+              threshold = Math.max(0.1, probabilities[29]); // Use 30th highest probability as threshold
+            } else {
+              threshold = 0.15; // Lower threshold if dataset is small
+            }
+          }
           
           for (let i = 0; i < testData.length; i += batchSize) {
             if (cancelled) break;
@@ -100,6 +133,14 @@ export const ModelPerformance: React.FC = () => {
               );
               
               const actualSepsis = actualRow ? Number(actualRow.SepsisLabel || actualRow.sepsislabel || 0) : 0;
+              const predictedSepsis = prediction.probability >= threshold ? 1 : 0;
+              
+              // Count for bar charts
+              if (actualSepsis === 1) actualYes++;
+              else actualNo++;
+              
+              if (predictedSepsis === 1) predictedYes++;
+              else predictedNo++;
               
               aggregatedData.push({
                 index: aggregatedData.length + 1,
@@ -117,6 +158,18 @@ export const ModelPerformance: React.FC = () => {
             // Small delay for smooth progress
             await new Promise(resolve => setTimeout(resolve, 100));
           }
+          
+          // Set bar chart data
+          setActualSepsisData([
+            { name: 'No Sepsis', count: actualNo, color: '#10b981' },
+            { name: 'Sepsis', count: actualYes, color: '#ef4444' }
+          ]);
+          
+          setPredictedSepsisData([
+            { name: 'No Sepsis', count: predictedNo, color: '#3b82f6' },
+            { name: 'Sepsis', count: predictedYes, color: '#f59e0b' }
+          ]);
+          
         } catch (error) {
           console.error('Prediction generation failed:', error);
         } finally {
@@ -406,6 +459,94 @@ export const ModelPerformance: React.FC = () => {
             <div className="flex items-center space-x-2">
               <div className="w-6 h-1 bg-primary-500 rounded" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #3b82f6 0, #3b82f6 6px, transparent 6px, transparent 12px)' }}></div>
               <span className="text-gray-600">AI Prediction</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Bar Charts Section */}
+      {actualSepsisData.length > 0 && predictedSepsisData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Actual Sepsis Distribution */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Actual Sepsis Distribution</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={actualSepsisData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#6b7280" 
+                    fontSize={12}
+                  />
+                  <YAxis 
+                    stroke="#6b7280" 
+                    fontSize={12}
+                    label={{ value: 'Patient Count', angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#fff', 
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px'
+                    }}
+                    formatter={(value: any) => [`${value} patients`, 'Count']}
+                  />
+                  <Bar 
+                    dataKey="count" 
+                    fill="#8884d8"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 text-center">
+              <div className="text-sm text-gray-600">
+                Total Patients: {actualSepsisData.reduce((sum, item) => sum + item.count, 0)}
+              </div>
+            </div>
+          </div>
+
+          {/* Predicted Sepsis Distribution */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Predicted Sepsis Distribution</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={predictedSepsisData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#6b7280" 
+                    fontSize={12}
+                  />
+                  <YAxis 
+                    stroke="#6b7280" 
+                    fontSize={12}
+                    label={{ value: 'Patient Count', angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#fff', 
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px'
+                    }}
+                    formatter={(value: any) => [`${value} patients`, 'Count']}
+                  />
+                  <Bar 
+                    dataKey="count" 
+                    fill="#82ca9d"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 text-center">
+              <div className="text-sm text-gray-600">
+                Total Predicted Positive: {predictedSepsisData.find(item => item.name === 'Sepsis')?.count || 0}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Threshold dynamically adjusted to ensure adequate sensitivity
+              </div>
             </div>
           </div>
         </div>

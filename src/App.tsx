@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, BarChart3, Users, Settings, AlertTriangle, Upload, Brain, Search } from 'lucide-react';
+import { Activity, BarChart3, Users, Settings, AlertTriangle, Upload, Brain, Search, Phone } from 'lucide-react';
 import { mockPatients } from './data/mockPatients';
 import { simulateMLPrediction } from './utils/mlSimulation';
 import { PatientCard } from './components/PatientCard';
@@ -16,6 +16,7 @@ import { ThresholdAlert } from './components/ThresholdAlert';
 import { DynamicSettings } from './components/DynamicSettings';
 import { DatasetInfo, DatasetRow, ModelMetrics, PatientAnalysisReport as ReportType, ThresholdSettings } from './types/dataset';
 import { EnhancedSepsisMLModel } from './utils/enhancedMLModel';
+import { SMSService } from './utils/smsService';
 import { PatientData } from './types/patient';
 
 type Tab = 'dashboard' | 'performance' | 'patients' | 'datasets' | 'ai-insights' | 'settings';
@@ -37,6 +38,10 @@ function App() {
   const [patientTimelines, setPatientTimelines] = useState<{ [id: string]: PatientData[] }>({});
   const [allPatients, setAllPatients] = useState<PatientData[]>([]);
   const [patientsSearchTerm, setPatientsSearchTerm] = useState('');
+  const [smsAlertSent, setSmsAlertSent] = useState<{ [patientId: string]: boolean }>({});
+  
+  // Get SMS service instance
+  const smsService = SMSService.getInstance();
   
   // Get current patient data for the selected hour
   const currentPatientTimeline = selectedPatientId && patientTimelines[selectedPatientId] ? patientTimelines[selectedPatientId] : [];
@@ -192,7 +197,7 @@ function App() {
     setPatientReport(null);
   };
 
-  const handleStartDiagnosis = (patientId: string) => {
+  const handleStartDiagnosis = async (patientId: string) => {
     if (!trainedModel || !trainedModel.isModelTrained()) {
       alert('Please upload and train a dataset first');
       return;
@@ -206,6 +211,38 @@ function App() {
     try {
       const report = trainedModel.analyzePatient(latestPatientData, patientId);
       setPatientReport(report);
+      
+      // Check if SMS alert should be sent for HIGH or CRITICAL risk
+      if ((report.overallRisk === 'HIGH' || report.overallRisk === 'CRITICAL') && 
+          !smsAlertSent[patientId]) {
+        
+        // Send SMS alert
+        const alertSent = await smsService.sendCriticalAlert(
+          patientId, 
+          report.overallRisk, 
+          report.riskProbability
+        );
+        
+        if (alertSent) {
+          setSmsAlertSent(prev => ({ ...prev, [patientId]: true }));
+          
+          // Show success notification
+          const alertDiv = document.createElement('div');
+          alertDiv.className = 'fixed top-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+          alertDiv.innerHTML = `
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+            </svg>
+            <span>🚨 Critical alert sent to medical team!</span>
+          `;
+          document.body.appendChild(alertDiv);
+          
+          setTimeout(() => {
+            document.body.removeChild(alertDiv);
+          }, 5000);
+        }
+      }
+      
       if (report.thresholdViolations.length > 0) {
         setThresholdViolations(report.thresholdViolations);
         setShowThresholdAlert(true);
@@ -250,6 +287,12 @@ function App() {
             <div className="text-sm text-gray-600">
               ICU Time: Hour {currentHour}
             </div>
+            {smsService.isServiceEnabled() && (
+              <div className="flex items-center space-x-2 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg">
+                <Phone className="w-4 h-4" />
+                <span className="font-medium">SMS Alerts Active</span>
+              </div>
+            )}
             {isTrainingInBackground && (
               <div className="px-3 py-2 bg-primary-100 text-primary-800 rounded-lg">
                 <span className="font-medium">Training Model...</span>
@@ -320,15 +363,23 @@ function App() {
                     <h2 className="text-xl font-semibold text-gray-900">
                       Patient: {currentPatientData.Patient_ID}
                     </h2>
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      prediction.riskLevel === 'LOW' ? 'bg-success-100 text-success-800' :
-                      prediction.riskLevel === 'MODERATE' ? 'bg-warning-100 text-warning-800' :
-                      prediction.riskLevel === 'HIGH' ? 'bg-orange-100 text-orange-800' :
-                      prediction.riskLevel === 'UNCERTAIN' ? 'bg-gray-100 text-gray-800' :
-                      'bg-danger-100 text-danger-800'
-                    }`}>
-                      {prediction.riskLevel} RISK - {(prediction.probability * 100).toFixed(1)}%
-                      {prediction.confidence && ` (${(prediction.confidence * 100).toFixed(0)}% confidence)`}
+                    <div className="flex items-center space-x-3">
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        prediction.riskLevel === 'LOW' ? 'bg-success-100 text-success-800' :
+                        prediction.riskLevel === 'MODERATE' ? 'bg-warning-100 text-warning-800' :
+                        prediction.riskLevel === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                        prediction.riskLevel === 'UNCERTAIN' ? 'bg-gray-100 text-gray-800' :
+                        'bg-danger-100 text-danger-800'
+                      }`}>
+                        {prediction.riskLevel} RISK - {(prediction.probability * 100).toFixed(1)}%
+                        {prediction.confidence && ` (${(prediction.confidence * 100).toFixed(0)}% confidence)`}
+                      </div>
+                      {smsAlertSent[currentPatientData.Patient_ID] && (
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                          <Phone className="w-3 h-3" />
+                          <span>Alert Sent</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -365,7 +416,7 @@ function App() {
           )}
 
           {activeTab === 'performance' && (
-            <ModelPerformance metrics={modelMetrics} />
+            <ModelPerformance />
           )}
 
           {activeTab === 'patients' && (
