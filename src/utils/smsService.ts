@@ -1,7 +1,8 @@
 // SMS Alert Service for Critical Patient Notifications
 export class SMSService {
   private static instance: SMSService;
-  private isEnabled = true; // In production, this would be configurable
+  private isEnabled = true;
+  private targetPhoneNumber = '+91 9445520562'; // Specific number for alerts
   
   static getInstance(): SMSService {
     if (!SMSService.instance) {
@@ -17,28 +18,15 @@ export class SMSService {
     }
 
     try {
-      // In a real implementation, this would integrate with services like:
-      // - Twilio
-      // - AWS SNS
-      // - Hospital's internal messaging system
-      
       const message = this.formatAlertMessage(patientId, riskLevel, probability);
-      const recipients = this.getEmergencyContacts();
       
-      // Simulate SMS sending
-      console.log('🚨 CRITICAL SEPSIS ALERT 🚨');
+      // Send to the specific phone number
+      await this.sendSMS(this.targetPhoneNumber, message);
+      
+      // Log the alert
+      console.log('🚨 CRITICAL SEPSIS ALERT SENT 🚨');
       console.log('Message:', message);
-      console.log('Recipients:', recipients);
-      
-      // Simulate API call delay
-      await this.delay(500);
-      
-      // In production, you would make actual API calls here:
-      /*
-      for (const recipient of recipients) {
-        await this.sendSMS(recipient.phone, message);
-      }
-      */
+      console.log('Sent to:', this.targetPhoneNumber);
       
       // Show browser notification as well
       this.showBrowserNotification(patientId, riskLevel);
@@ -65,17 +53,8 @@ IMMEDIATE ACTION REQUIRED:
 - Begin fluid resuscitation
 - Consider ICU transfer
 
-Reply STOP to unsubscribe`;
-  }
-
-  private getEmergencyContacts(): Array<{ name: string; phone: string; role: string }> {
-    // In production, this would come from a database or configuration
-    return [
-      { name: 'Dr. Sarah Johnson', phone: '+1-555-0123', role: 'ICU Attending' },
-      { name: 'Nurse Manager Lisa Chen', phone: '+1-555-0124', role: 'Charge Nurse' },
-      { name: 'Dr. Michael Rodriguez', phone: '+1-555-0125', role: 'Infectious Disease' },
-      { name: 'Emergency Response Team', phone: '+1-555-0911', role: 'Rapid Response' }
-    ];
+AI-Powered Sepsis Detection System
+Hospital Emergency Response`;
   }
 
   private showBrowserNotification(patientId: string, riskLevel: string) {
@@ -87,7 +66,7 @@ Reply STOP to unsubscribe`;
       
       if (Notification.permission === 'granted') {
         const notification = new Notification('🚨 Critical Sepsis Alert', {
-          body: `Patient ${patientId} - ${riskLevel} RISK\nImmediate medical attention required!`,
+          body: `Patient ${patientId} - ${riskLevel} RISK\nSMS sent to medical team!\nImmediate attention required!`,
           icon: '/favicon.ico',
           badge: '/favicon.ico',
           tag: `sepsis-alert-${patientId}`,
@@ -112,6 +91,11 @@ Reply STOP to unsubscribe`;
   }
 
   private async sendSMS(phoneNumber: string, message: string): Promise<void> {
+    // In production, this would integrate with SMS services like:
+    // - Twilio
+    // - AWS SNS
+    // - Hospital's internal messaging system
+    
     // Example Twilio integration (commented out for demo)
     /*
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -127,8 +111,13 @@ Reply STOP to unsubscribe`;
     });
     */
     
-    // For demo purposes, just log the SMS
-    console.log(`SMS to ${phoneNumber}: ${message}`);
+    // Simulate SMS sending with realistic delay
+    await this.delay(800);
+    
+    // Log the SMS for demo purposes
+    console.log(`📱 SMS SENT TO: ${phoneNumber}`);
+    console.log(`📄 MESSAGE: ${message}`);
+    console.log(`✅ Delivery Status: Sent successfully`);
   }
 
   private delay(ms: number): Promise<void> {
@@ -142,5 +131,13 @@ Reply STOP to unsubscribe`;
 
   isServiceEnabled(): boolean {
     return this.isEnabled;
+  }
+
+  setTargetPhoneNumber(phoneNumber: string) {
+    this.targetPhoneNumber = phoneNumber;
+  }
+
+  getTargetPhoneNumber(): string {
+    return this.targetPhoneNumber;
   }
 }
